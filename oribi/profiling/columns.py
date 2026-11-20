@@ -32,6 +32,17 @@ def _snapshot_top_value(value: Any, copies: dict[int, Any]) -> Any:
     return entries
 
 
+def _deterministic_value_key(value: Any) -> tuple[str, str]:
+    """Use a stable type-and-value representation for tie-breaking."""
+    kind = type(value)
+    type_name = f"{kind.__module__}.{kind.__qualname__}"
+    if isinstance(value, str):
+        rendered = value
+    else:
+        rendered = repr(value)
+    return type_name, rendered
+
+
 def profile_column(obs: ColumnObservation, row_count: int, top_k: int, include_quantiles: bool) -> StatisticsContext:
     s = obs.series
     denom = row_count or 1
@@ -72,9 +83,13 @@ def profile_column(obs: ColumnObservation, row_count: int, top_k: int, include_q
     if len(non_null) and (obs.logical_type in {"text", "categorical", "boolean", "unknown", "duration"} or obs.distinct_count <= top_k * 4):
         try:
             counts = non_null.value_counts(dropna=True)
-            counts = counts[counts > 0].head(top_k)
-            values["top_values"] = tuple((_snapshot_top_value(k, {}), int(v)) for k, v in counts.items())
-            values["top_frequencies"] = tuple(int(v) for v in counts.values)
+            ranked = sorted(
+                ((key, int(count)) for key, count in counts.items() if count > 0),
+                key=lambda item: (-item[1], _deterministic_value_key(item[0]))
+            )
+            ranked = ranked[:top_k]
+            values["top_values"] = tuple((_snapshot_top_value(k, {}), count) for k, count in ranked)
+            values["top_frequencies"] = tuple(count for _, count in ranked)
         except (TypeError, ValueError):
             pass
     return StatisticsContext(

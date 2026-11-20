@@ -150,6 +150,25 @@ def test_unused_categories_are_excluded_from_top_values():
     assert column.statistics.top_frequencies == (1,)
 
 
+@pytest.mark.parametrize("values", [
+    ["beta", "alpha", "beta", "alpha"],
+    ["alpha", "beta", "alpha", "beta"],
+])
+def test_top_value_ties_are_independent_of_row_order(values):
+    column = inspect(pd.DataFrame({"category": values}), options=ProfileOptions(top_k=1)).columns[0]
+    assert column.statistics.top_values == (("alpha", 2),)
+    assert column.statistics.top_frequencies == (2,)
+
+
+def test_top_k_tied_categories_keep_limit_and_counts():
+    frame = pd.DataFrame({
+        "category": pd.Series(["beta", "alpha", "beta", "alpha"], dtype="category"),
+    })
+    column = inspect(frame, options=ProfileOptions(top_k=2)).columns[0]
+    assert column.statistics.top_values == (("alpha", 2), ("beta", 2))
+    assert column.statistics.top_frequencies == (2, 2)
+
+
 def test_temporal_gap_warning_is_serialized():
     context, _, warnings = _temporal_warnings(["2026-01-01", "2026-01-02", "2026-01-04", "2026-01-05"])
     assert warnings[0] in context.warnings
